@@ -1,0 +1,18 @@
+#################################################
+#
+# SAS/C Makefile for "Emu68Blanker"
+# for AmigaOS M68K SAS/C 6.59 Compiler
+# 
+#################################################
+
+OUTFILE=Emu68Blanker
+
+OBJECTS=Emu68Blanker.o
+
+all: $(OUTFILE)
+
+clean:
+    @delete $(OBJECTS)
+
+$(OUTFILE): $(OBJECTS)
+    sc LINK $(OBJECTS) TO $(OUTFILE)
