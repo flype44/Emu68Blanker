@@ -223,7 +223,7 @@ static BOOL BrokerOpen(VOID)
 			// Create CxCustom
 			if (cxCustom = CxCustom(BrokerCustom, 0L)) {
 				AttachCxObj(cxBroker, cxCustom);
-				if ((signal = (ULONG)AllocSignal(-1L)) != -1) {
+				if ((signal = (ULONG)AllocSignal(-1L)) != -1L) {
 					struct Task * task = FindTask(NULL);
 					cxSignalMask = 1L << signal;
 					cxPortMask |= cxSignalMask;
@@ -318,7 +318,7 @@ static VOID BrokerListen(VOID)
 		
 		// Check cxSignal
 		if (signals & cxSignalMask)
-			BrokerAppear(); // Timeout
+			BrokerAppear(); // User inactivity
 	}
 }
 
@@ -351,7 +351,7 @@ static VOID BrokerAppear(VOID)
 			// Open custom window
 			if (customWindow = OpenWindowTags(NULL,
 				WA_CustomScreen,  customScreen,
-				WA_Left,          0, 
+				WA_Left,   Â       0, 
 				WA_Top,           0,
 				WA_Width,         customScreen->Width,
 				WA_Height,        customScreen->Height,
