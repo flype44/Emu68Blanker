@@ -2,6 +2,7 @@
 
 Emu68Blanker
 
+![Screenshot](bin/Emu68Blanker.png)
 
 ## Author
 
