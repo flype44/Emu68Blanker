@@ -3,8 +3,8 @@
 This project contains files originating from both GPL-2.0-or-later and MPL-2.0 sources, with modifications. Please refer to the SPDX headers in individual source files for specific licensing information.
 
 Upstream projects:
+- [Emu68](https://github.com/michalsc/Emu68)
 - [Emu68-tools](https://github.com/michalsc/Emu68-tools)
-- [u-boot](https://github.com/u-boot/u-boot)
 
 You may use, modify, and distribute this project under the terms of either:
 
