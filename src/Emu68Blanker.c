@@ -10,6 +10,9 @@
  * 
  ******************************************************************************/
 
+#define  _STRICT_ANSI
+
+#include <stdio.h>
 #include <dos/dos.h>
 #include <exec/exec.h>
 #include <intuition/intuition.h>
@@ -21,6 +24,8 @@
 #include <proto/exec.h>
 #include <proto/intuition.h>
 #include <proto/mailbox.h>
+#include <proto/utility.h>
+
 #include "Emu68Blanker.h"
 
 /******************************************************************************
@@ -29,11 +34,25 @@
  * 
  ******************************************************************************/
 
-#define MAILBOXNAME       "mailbox.resource"
-#define DEVICETREENAME    "devicetree.resource"
-#define BLANKER_HOTKEY    "rawkey control alt b"
-#define BLANKER_DELAY     60
-#define BLANKER_PRIORITY  0
+#define BLANKER_DELAY 1800
+#define BLANKER_PRIORITY 0
+#define BLANKER_HOTKEY "control alt b"
+#define BLANKER_DESCR "[%s] [%lu secs]"
+
+#define MAILBOXNAME "mailbox.resource"
+#define DEVICETREENAME "devicetree.resource"
+
+/******************************************************************************
+ * 
+ * Externs
+ * 
+ ******************************************************************************/
+
+extern struct Library * CxBase;
+extern struct ExecBase * SysBase;
+extern struct DosLibrary * DosBase;
+extern struct Library * UtilityBase;
+extern struct IntuitionBase * IntuitionBase;
 
 /******************************************************************************
  * 
@@ -55,32 +74,26 @@ static VOID SetBlankScreen(ULONG state);
 
 APTR MailboxBase = NULL;
 APTR DeviceTreeBase = NULL;
+
+BOOL bBusy = FALSE;
+ULONG signal = -1L;
+ULONG cxPortMask = 0;
+ULONG cxSignalMask = 0;
+
 CxObj * cxBroker = NULL;
 CxObj * cxFilter = NULL;
 CxObj * cxCustom = NULL;
 CxObj * cxSignal = NULL;
-ULONG signal = -1L;
-ULONG cxPortMask = 0;
-ULONG cxSignalMask = 0;
+STRPTR * toolTypes = NULL;
+struct MsgPort * cxPort = NULL;
+
+TEXT cxHotKeyFull[128];
+TEXT cxHotKeyShort[128];
+TEXT cxDescription[128];
 ULONG cxDelay = BLANKER_DELAY;
 ULONG cxPriority = BLANKER_PRIORITY;
-STRPTR cxHotKey = BLANKER_HOTKEY;
-struct Task * task = NULL;
-struct MsgPort * cxPort = NULL;
-STRPTR * toolTypes = NULL;
+
 STRPTR versionTag = VERSIONTAG;
-BOOL bBusy = FALSE;
-
-/******************************************************************************
- * 
- * Externs
- * 
- ******************************************************************************/
-
-extern struct Library * CxBase;
-extern struct ExecBase * SysBase;
-extern struct DosLibrary * DosBase;
-extern struct IntuitionBase * IntuitionBase;
 
 /******************************************************************************
  * 
@@ -95,23 +108,49 @@ ULONG chkabort(VOID)
 
 /******************************************************************************
  * 
+ * StrToLower()
+ * 
+ ******************************************************************************/
+
+STRPTR StrToLower(STRPTR string)
+{
+	STRPTR s = string;
+	
+	while (*s) {
+		if (*s >= 'A' && *s <= 'Z')
+			*s = *s - 'A' + 'a';
+		s++;
+	}
+	
+	return string;
+}
+
+/******************************************************************************
+ * 
  * SetBlankScreen()
  * 
  ******************************************************************************/
 
 static VOID SetBlankScreen(ULONG state)
 {
-	ULONG words[7];
+	// RPi mailbox tag identifier
+	// TAG_BLANK_SCREEN (0x40002)
+	// Compatible with VC4 and VC6.
 	
-	words[0] = 7 * 4;      // Mailbox Request size
-	words[1] = 0x00000000; // Mailbox Request code
-	words[2] = 0x00040002; // Mailbox Request tag id
-	words[3] = 0x00000004; // Mailbox Request tag size
-	words[4] = 0x00000000; // Mailbox Request tag code
-	words[5] = state;      // Mailbox Request tag state
-	words[6] = 0x00000000; // Mailbox Request end
-	
-	MB_RawCommand(words);
+	if (MailboxBase != NULL)
+	{
+		ULONG command[7];
+		
+		command[0] = 7 * 4;      // Request size
+		command[1] = 0x00000000; // Request code
+		command[2] = 0x00040002; // Request tag id
+		command[3] = 0x00000004; // Request tag size
+		command[4] = 0x00000000; // Request tag code
+		command[5] = state;      // Request tag state
+		command[6] = 0x00000000; // Request end
+		
+		MB_RawCommand(command);  // Request call
+	}
 }
 
 /******************************************************************************
@@ -125,23 +164,18 @@ VOID __interrupt __saveds BrokerCustom(register CxMsg * cxMsg, CxObj * cxObj)
 	struct InputEvent * ie;
 	static ULONG time = 0L;
 	
-	if (ie = (struct InputEvent *)CxMsgData(cxMsg))
-	{
-		if (ie->ie_Class == IECLASS_TIMER)
-		{
-			if (!bBusy)
-			{
+	// Check for user inactivity
+	if (ie = (struct InputEvent *)CxMsgData(cxMsg)) {
+		// Broker timer occurs every ~0.1 second (10Hz)
+		if (ie->ie_Class == IECLASS_TIMER) {
+			if (!bBusy) {
 				time++;
-				
-				if (time > cxDelay)
-				{
+				if (time > cxDelay) {
 					time = 0L;
 					DivertCxMsg(cxMsg, cxObj, cxObj);
 				}
 			}
-		}
-		else
-		{
+		} else {
 			time = 0L;
 		}
 	}
@@ -175,26 +209,24 @@ static BOOL BrokerOpen(VOID)
 		
 		newBroker.nb_Port = cxPort;
 		newBroker.nb_Pri = (BYTE)cxPriority;
+		newBroker.nb_Descr = cxDescription;
 		cxPortMask = 1L << cxPort->mp_SigBit;
 		cxBroker = CxBroker(&newBroker, &error);
 		
 		if (cxBroker && error == CBERR_OK)
 		{
 			// Create HotKey
-			if (cxFilter = HotKey(cxHotKey, cxPort, CXCMD_APPEAR))
+			if (cxFilter = HotKey(cxHotKeyFull, cxPort, CXCMD_APPEAR)) {
 				AttachCxObj(cxBroker, cxFilter);
+			}
 			
 			// Create CxCustom
-			if (cxCustom = CxCustom(BrokerCustom, 0L))
-			{
+			if (cxCustom = CxCustom(BrokerCustom, 0L)) {
 				AttachCxObj(cxBroker, cxCustom);
-				
-				if ((signal = (ULONG)AllocSignal(-1L)) != -1)
-				{
-					task = FindTask(NULL);
+				if ((signal = (ULONG)AllocSignal(-1L)) != -1) {
+					struct Task * task = FindTask(NULL);
 					cxSignalMask = 1L << signal;
 					cxPortMask |= cxSignalMask;
-					
 					if (cxSignal = CxSignal(task, signal))
 						AttachCxObj(cxCustom, cxSignal);
 				}
@@ -261,16 +293,13 @@ static VOID BrokerListen(VOID)
 			switch (msgType)
 			{
 			case CXM_IEVENT:
-				switch (msgID) {
-				case CXCMD_APPEAR:
-					BrokerAppear();
-					break;
-				}
+				if (msgID == CXCMD_APPEAR)
+					BrokerAppear(); // HotKey
 				break;
 			case CXM_COMMAND:
 				switch (msgID) {
 				case CXCMD_APPEAR:
-					BrokerAppear();
+					BrokerAppear(); // Exchange
 					break;
 				case CXCMD_ENABLE:
 					ActivateCxObj(cxBroker, TRUE);
@@ -279,8 +308,6 @@ static VOID BrokerListen(VOID)
 					ActivateCxObj(cxBroker, FALSE);
 					break;
 				case CXCMD_KILL:
-					done = TRUE;
-					break;
 				case CXCMD_UNIQUE:
 					done = TRUE;
 					break;
@@ -291,7 +318,7 @@ static VOID BrokerListen(VOID)
 		
 		// Check cxSignal
 		if (signals & cxSignalMask)
-			BrokerAppear();
+			BrokerAppear(); // Timeout
 	}
 }
 
@@ -341,13 +368,13 @@ static VOID BrokerAppear(VOID)
 				// Show Emu68 screen
 				SetBlankScreen(0);
 				
-				// Handle events
+				// Handle window events
 				while (!done)
 				{
-					// Wait for new events
+					// Wait for new window events
 					WaitPort(customWindow->UserPort);
 					
-					// Process incoming events
+					// Process incoming window events
 					while (msg = (struct IntuiMessage *)GetMsg(customWindow->UserPort))
 					{
 						if (startSeconds == 0)
@@ -399,6 +426,8 @@ static VOID BrokerAppear(VOID)
 
 ULONG main(ULONG argc, STRPTR * argv)
 {
+	STRPTR cxHotKey = BLANKER_HOTKEY;
+	
 	// Open devicetree.resource
 	if (!(DeviceTreeBase = OpenResource(DEVICETREENAME))) {
 		PutStr("Cant open " DEVICETREENAME " !\n");
@@ -413,10 +442,19 @@ ULONG main(ULONG argc, STRPTR * argv)
 	
 	// Open tooltypes
 	if (toolTypes = ArgArrayInit(argc, argv)) {
-		cxPriority = ArgInt(toolTypes, "CX_PRIORITY", BLANKER_PRIORITY);
-		cxHotKey = ArgString(toolTypes, "HOTKEY", BLANKER_HOTKEY);
 		cxDelay = ArgInt(toolTypes, "DELAY", BLANKER_DELAY) * 10;
+		cxPriority = ArgInt(toolTypes, "CX_PRIORITY", BLANKER_PRIORITY);
+		cxHotKey = StrToLower(ArgString(toolTypes, "HOTKEY", BLANKER_HOTKEY));
 	}
+	
+	// Prepare strings
+	sprintf(cxHotKeyShort, "%s", cxHotKey);
+	sprintf(cxHotKeyFull, "rawkey %s", cxHotKey);
+	sprintf(cxDescription, BLANKER_DESCR, cxHotKeyShort, cxDelay / 10);
+	
+	// Close tooltypes
+	if (toolTypes != NULL)
+		ArgArrayDone();
 	
 	// Open commodity
 	if (BrokerOpen()) {
