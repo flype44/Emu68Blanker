@@ -18,14 +18,14 @@ https://github.com/flype44/Emu68Blanker
 
 An Amiga equipped with a PiStorm and Emu68.
 
-It also needs mandatory Emu68 version 1.0.999+
+Requires Emu68 version 1.0.999 or higher.
 
 
 ## Description
 
 Emu68Blanker is a very simple screensaver for PiStorm/Emu68.
 
-The only purpose of this program is to display the Emu68 builtin boot screen after some delay of user inactivity.
+The purpose of this program is to display the Emu68 builtin boot screen after a period of user inactivity.
 
 
 ## Installation
@@ -34,8 +34,14 @@ Copy the Emu68Blanker file and the .info in the `SYS:WBStartup` folder.
 
 Then edit the icon tooltypes to customize the `HOTKEY` and the `DELAY` tooltypes.
 
-The `DELAY` tooltype allows to define the user inactivity, in seconds.
+The `DELAY` tooltype allows to define the period of user inactivity, in seconds.
 
+Defaults tooltypes are:
+
+```
+HOTKEY=control alt b
+DELAY=180
+```
 
 ## Additional notes
 
