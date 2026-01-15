@@ -25,7 +25,7 @@ It also needs mandatory Emu68 version 1.0.999+
 
 Emu68Blanker is a very simple screensaver for PiStorm/Emu68.
 
-The only purpose of this program is to display the builtin Emu68 boot screen after some delay of user inactivity.
+The only purpose of this program is to display the Emu68 builtin boot screen after some delay of user inactivity.
 
 
 ## Installation
@@ -39,20 +39,18 @@ The `DELAY` tooltype allows to define the user inactivity, in seconds.
 
 ## Additional notes
 
-The builtin Emu68 boot screen can be gray, black or purple.
+The Emu68 builtin boot screen can be `gray`, `black` or `purple`.
 
-This is configurable in the Emu68 SDCard cmdline.txt file.
+This is configurable in the Emu68 SDCard `cmdline.txt` file.
 
 Eg. `logo=black`, or `logo=purple`, or unset for gray.
 
 
 ## Programming notes
 
-This program was written as an example on how to use the new 
-`mailbox.resource` present in the Emu68 1.0.999+ builtin ROM.
+This program was written as an example on how to use the new `mailbox.resource` present in the Emu68 1.0.999+ builtin ROM.
 
-The headers for this resource are embedded in the Emu68-Tools
-package.
+The headers for this resource are embedded in the Emu68-Tools package.
 
 See https://github.com/michalsc/Emu68-Tools/releases
 
